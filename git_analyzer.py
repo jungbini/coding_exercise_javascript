@@ -187,4 +187,4 @@ def analyze_commits_in_directory(github_url, token, username, directory="lib/", 
     })
 
     return summary
-
+ 
