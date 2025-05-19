@@ -1,5 +1,5 @@
 import pandas as pd
-from git_analyzer import analyze_commits_in_directory
+from git_analyzer import analyze_commits
 from html_parser import save_dataframe_as_html
 
 def analyze_multiple_users(account_file, branch="main"):
@@ -13,8 +13,8 @@ def analyze_multiple_users(account_file, branch="main"):
             continue
         try:
             github_url, token, username = line.strip().split(",")
-            print(f"\n🔍 분석 중: {username} ({github_url})")
-            df = analyze_commits_in_directory(github_url, token, username, directory="lib/")
+            print(f"🔍 분석 중: {username} ({github_url})")
+            df = analyze_commits(github_url, token, username, directory="lib/", exclude_first_commit=True)
             if not df.empty:
                 all_results.append(df)
             else:
