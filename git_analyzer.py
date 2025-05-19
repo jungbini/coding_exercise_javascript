@@ -7,7 +7,6 @@ import os
 from datetime import datetime, timedelta
 
 def extract_repo_info(url):
-    """https://github.com/owner/repo 형식에서 owner, repo 추출"""
     match = re.match(r"https://github\.com/([^/]+)/([^/]+)", url)
     if match:
         return match.group(1), match.group(2)
@@ -22,7 +21,6 @@ def calculate_result(count):
     else:
         return "success"
 
-
 def fetch_loc(repo_owner, repo_name, branch, filename, headers):
     raw_url = f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/{branch}/{filename}"
     try:
@@ -34,12 +32,9 @@ def fetch_loc(repo_owner, repo_name, branch, filename, headers):
     except:
         return None
 
-
 def calculate_similarity(local_code: str, remote_code: str) -> float:
-    """두 코드 간 유사도 비율(%)을 계산"""
     matcher = difflib.SequenceMatcher(None, local_code, remote_code)
     return round(matcher.ratio() * 100, 2)
-
 
 def fetch_similarity(repo_owner, repo_name, branch, filename, headers, local_base_dir="lib"):
     local_path = os.path.join(local_base_dir, filename[len("lib/"):])
@@ -72,7 +67,7 @@ def load_week_range(file_path="week_information.txt"):
         end = datetime.strptime(end_str.strip(), "%Y-%m-%d")
         return label, start, end
 
-def analyze_commits_in_directory(github_url, token, username, directory="lib/", branch="main", start_date=None, end_date=None):
+def analyze_commits(github_url, token, username, directory="lib/", branch="main", start_date=None, end_date=None, exclude_first_commit=False):
     repo_owner, repo_name = extract_repo_info(github_url)
     week_label, start_filter, end_filter = load_week_range()
 
@@ -107,7 +102,7 @@ def analyze_commits_in_directory(github_url, token, username, directory="lib/", 
             detail = detail_res.json()
             date_raw = detail["commit"]["author"]["date"]
             utc_date = datetime.strptime(date_raw, "%Y-%m-%dT%H:%M:%SZ")
-            date = utc_date + timedelta(hours=9)  # KST (UTC+9) 적용
+            date = utc_date + timedelta(hours=9)
 
             if not (start_filter <= date <= end_filter):
                 continue
@@ -123,6 +118,8 @@ def analyze_commits_in_directory(github_url, token, username, directory="lib/", 
                         "date": date,
                         "filename": filepath,
                         "total_changes": f.get("changes", 0),
+                        "additions": f.get("additions", 0),
+                        "deletions": f.get("deletions", 0),
                         "status": status,
                         "url": html_url
                     })
@@ -136,12 +133,16 @@ def analyze_commits_in_directory(github_url, token, username, directory="lib/", 
 
     df = pd.DataFrame(raw_data)
 
+    if exclude_first_commit:
+        df["rank"] = df.groupby("filename")["date"].rank(method="first")
+        df = df[~((df["rank"] == 1) & (df.groupby("filename")["filename"].transform("count") > 1))]
+        df.drop(columns=["rank"], inplace=True)
+
     grouped_time = df.groupby("filename").agg(
         first_date=("date", "min"),
         last_date=("date", "max")
     ).reset_index()
-    grouped_time["코딩 시간"] = grouped_time.apply(lambda row: calculate_duration(row["first_date"], row["last_date"]),
-                                               axis=1)
+    grouped_time["코딩 시간"] = grouped_time.apply(lambda row: calculate_duration(row["first_date"], row["last_date"]), axis=1)
 
     latest_info = df.sort_values("date").groupby("filename").last().reset_index()
 
@@ -149,6 +150,8 @@ def analyze_commits_in_directory(github_url, token, username, directory="lib/", 
         user=("user", "first"),
         date=("date", "max"),
         total_changes_mean=("total_changes", "mean"),
+        additions_mean=("additions", "mean"),
+        deletions_mean=("deletions", "mean"),
         commit_count=("filename", "count")
     ).reset_index()
 
@@ -159,32 +162,36 @@ def analyze_commits_in_directory(github_url, token, username, directory="lib/", 
     summary = summary[summary["loc"].notnull()]
     summary["loc"] = summary["loc"].astype(int)
 
-    summary["code_similarity"] = summary["filename"].apply(
-        lambda f: fetch_similarity(repo_owner, repo_name, branch, f, headers))
+    summary["code_similarity"] = summary["filename"].apply(lambda f: fetch_similarity(repo_owner, repo_name, branch, f, headers))
     summary["date"] = pd.to_datetime(summary["date"]).dt.strftime("%Y-%m-%d %H:%M")
     summary["result"] = summary["commit_count"].apply(calculate_result)
 
     summary["파일명 (총 커밋 수)"] = summary.apply(
         lambda row: f'<a href="{row["url"]}" target="_blank">{row["filename"]} ({row["commit_count"]})</a>', axis=1)
-    summary.drop(columns=["filename", "url", "commit_count"], inplace=True)
+
+    summary = summary.round({
+        "total_changes_mean": 2,
+        "additions_mean": 2,
+        "deletions_mean": 2,
+        "code_similarity": 2
+    })
+
+    summary["평균 수정 라인 수 (+/-)"] = summary.apply(
+        lambda row: f'{row["total_changes_mean"]} ({row["additions_mean"]}/{row["deletions_mean"]})', axis=1
+    )
+
+    summary.drop(columns=["filename", "url", "commit_count", "total_changes_mean", "additions_mean", "deletions_mean"], inplace=True)
 
     summary.rename(columns={
         "date": "최근 커밋일시",
         "status": "상태",
-        "total_changes_mean": "평균 수정 라인 수",
         "code_similarity": "코드 유사도",
         "result": "평가"
     }, inplace=True)
 
     summary = summary[[
         "user", "파일명 (총 커밋 수)", "최근 커밋일시", "상태",
-        "평균 수정 라인 수", "코드 유사도", "코딩 시간", "평가"
+        "평균 수정 라인 수 (+/-)", "코드 유사도", "코딩 시간", "평가"
     ]]
 
-    summary = summary.round({
-        "평균 수정 라인 수": 2,
-        "코드 유사도": 2
-    })
-
     return summary
- 
