@@ -174,3 +174,8 @@ cython_debug/
 .pypirc
 all_users_summary.csv
 commit_summary.html
+commit_summary.html
+all_users_summary.csv
+all_users_summary.csv
+.gitignore
+commit_summary.html
