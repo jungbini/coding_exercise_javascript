@@ -1,5 +1,6 @@
 import pandas as pd
-import sys, os
+import sys
+import os
 from git_analyzer import analyze_commits, get_week_options, load_week_range
 from html_parser import save_dataframe_as_html
 
@@ -109,10 +110,18 @@ if __name__ == "__main__":
 
         # 5. 분석 결과가 있으면 HTML 파일로 저장
         if not result_df.empty:
+            # 'result' 폴더가 없으면 생성
+            output_dir = "result"
+            os.makedirs(output_dir, exist_ok=True)
+
+            # 파일명과 폴더 경로를 합쳐서 최종 저장 경로 생성
+            base_filename = f"{selected_week_label}_summary.html"
+            output_html_path = os.path.join(output_dir, base_filename)
+
+            # HTML 파서에 수정된 경로를 전달
             week_info = load_week_range(WEEK_INFO_FILE, selected_week_label)
-            output_html_filename = f"{selected_week_label}_summary.html"
             report_title = f"{selected_week_label} 주차 커밋 통계"
-            save_dataframe_as_html(result_df, week_info, output_path=output_html_filename, title=report_title)
+            save_dataframe_as_html(result_df, week_info, output_path=output_html_path, title=report_title)
 
     except FileNotFoundError:
         print(f"❌ 오류: '{WEEK_INFO_FILE}' 파일을 찾을 수 없습니다.")
