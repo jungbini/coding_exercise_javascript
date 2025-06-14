@@ -27,7 +27,7 @@ def analyze_repositories_for_week(account_file, selected_week, branch="main"):
             user_id, token, username = line.strip().split(",")
 
             # XXX와 YYY를 채워 동적으로 GitHub URL 생성
-            repo_name = f"homework-{selected_week}-{username}"
+            repo_name = f"homework-{selected_week}-{user_id}"
             github_url = f"https://github.com/computer-sunmoon/{repo_name}.git"
 
             print(f"🔍 분석 중: {username} ({github_url})")
