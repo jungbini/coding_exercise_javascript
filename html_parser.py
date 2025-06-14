@@ -1,5 +1,4 @@
 import pandas as pd
-import os
 
 def save_dataframe_as_html(df, week_info, output_path="commit_summary.html", title="파일별 커밋 통계"):
     """
