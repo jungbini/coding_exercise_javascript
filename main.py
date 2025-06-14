@@ -14,7 +14,7 @@ def load_token(file_path="token.txt"):
     except FileNotFoundError:
         print(f"❌ 오류: '{file_path}' 파일을 찾을 수 없습니다. 토큰 파일을 생성해주세요.")
         sys.exit(1)
-        
+
 
 def analyze_repositories_for_week(account_file, token, selected_week, branch="main"):
     """
@@ -52,7 +52,7 @@ def analyze_repositories_for_week(account_file, token, selected_week, branch="ma
                 username=username,              # 보고서 표시용 이름
                 author_email=email,             # 커밋 필터링용 이메일
                 selected_week=selected_week,
-                directory=f"{selected_week}/",
+                directory=f"lib/{selected_week}/",
                 exclude_first_commit=True
             )
             
