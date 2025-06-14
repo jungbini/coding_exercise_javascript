@@ -95,10 +95,8 @@ def load_week_range(file_path="week_information.txt", selected_label: str = None
     raise ValueError(f"'{selected_label}'에 해당하는 주차 정보를 찾을 수 없습니다.")
 
 
-def analyze_commits(github_url, token, username, selected_week, directory="lib/", branch="main", exclude_first_commit=False):
-    """GitHub 저장소의 커밋을 분석합니다. selected_week 인자를 필수로 받습니다."""
+def analyze_commits(github_url, token, username, author_email, selected_week, directory="lib/", branch="main", exclude_first_commit=False):
     repo_owner, repo_name = extract_repo_info(github_url)
-    # selected_week를 기반으로 날짜 필터링 정보 로드
     week_label, start_filter, end_filter = load_week_range(selected_label=selected_week)
 
     base_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/commits"
@@ -106,7 +104,8 @@ def analyze_commits(github_url, token, username, selected_week, directory="lib/"
         "Authorization": f"token {token}",
         "Accept": "application/vnd.github.v3+json"
     }
-    params = {"per_page": 100, "author": username}
+    # author 필터에 username이 아닌 author_email을 사용
+    params = {"per_page": 100, "author": author_email}
     raw_data = []
     page = 1
 
