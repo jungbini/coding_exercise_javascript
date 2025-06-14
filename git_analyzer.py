@@ -6,12 +6,14 @@ import difflib
 import os
 from datetime import datetime, timedelta
 
+
 def extract_repo_info(url):
     match = re.match(r"https://github\.com/([^/]+)/([^/]+)", url)
     if match:
         return match.group(1), match.group(2)
     else:
         raise ValueError("잘못된 GitHub 저장소 주소입니다. 예: https://github.com/owner/repo")
+    
 
 def get_week_options(file_path="week_information.txt"):
     """week_information.txt에서 모든 주차 라벨을 읽어 리스트로 반환합니다."""
@@ -24,6 +26,7 @@ def get_week_options(file_path="week_information.txt"):
                     options.append(parts[0])
     return options
 
+
 def calculate_result(count):
     if count == 1:
         return "fail"
@@ -31,6 +34,7 @@ def calculate_result(count):
         return "warning"
     else:
         return "success"
+    
 
 def fetch_loc(repo_owner, repo_name, branch, filename, headers):
     raw_url = f"https://raw.githubusercontent.com/{repo_owner}/{repo_name}/{branch}/{filename}"

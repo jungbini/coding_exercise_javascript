@@ -1,5 +1,6 @@
 import pandas as pd
 
+
 def save_dataframe_as_html(df, week_info, output_path="commit_summary.html", title="파일별 커밋 통계"):
     """
     DataFrame을 HTML 파일로 저장합니다. week_info 튜플(라벨, 시작일, 종료일)을 직접 받습니다.
