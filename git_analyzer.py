@@ -112,7 +112,7 @@ def analyze_commits(github_url, token, username, selected_week, directory="lib/"
         if res.status_code != 200:
             # API 호출 실패 시 저장소나 토큰 문제일 가능성이 높음
             raise Exception(f"GitHub API 호출 실패 (Status: {res.status_code}). 저장소 주소나 토큰을 확인하세요.")
-        
+
         commits = res.json()
         if not commits:
             break
@@ -179,7 +179,7 @@ def analyze_commits(github_url, token, username, selected_week, directory="lib/"
     summary["평균 수정 라인 수 (+/-)"] = summary.apply(lambda row: f'{row["total_changes_mean"]} ({row["additions_mean"]}/{row["deletions_mean"]})', axis=1)
     summary.drop(columns=["filename", "url", "commit_count", "total_changes_mean", "additions_mean", "deletions_mean"], inplace=True)
     summary.rename(columns={"date": "최근 커밋일시", "status": "상태", "code_similarity": "코드 유사도", "result": "평가"}, inplace=True)
-    
+
     # week_label 컬럼을 추가하기 위해 main.py로 넘겨주기 전 컬럼 정리
     final_summary = summary[["user", "파일명 (총 커밋 수)", "최근 커밋일시", "상태", "평균 수정 라인 수 (+/-)", "코드 유사도", "코딩 시간", "평가"]]
     final_summary.insert(0, 'week_label', week_label) # week_label을 첫 번째 열로 추가
