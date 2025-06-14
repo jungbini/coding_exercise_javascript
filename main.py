@@ -44,7 +44,7 @@ def analyze_repositories_for_week(account_file, selected_week, branch="main"):
                 username=username,              # 보고서 표시용 이름 (예: 'jungbini')
                 author_email=email,             # 커밋 필터링용 이메일 주소
                 selected_week=selected_week,
-                directory=f"{selected_week}/",
+                directory=f"lib/{selected_week}/",
                 exclude_first_commit=True
             )
             
