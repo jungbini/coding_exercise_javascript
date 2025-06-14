@@ -62,6 +62,7 @@ def analyze_repositories_for_week(account_file, selected_week, branch="main"):
         print("\n❗ 모든 사용자에 대한 분석에 실패했거나 유효한 커밋이 없습니다.")
         return pd.DataFrame()
 
+
 # 스크립트 실행 부분
 if __name__ == "__main__":
     ACCOUNT_FILE = "users_account.txt"
