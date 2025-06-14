@@ -37,8 +37,8 @@ def analyze_repositories_for_week(account_file, selected_week, branch="main"):
                 github_url=github_url,
                 token=token,
                 username=username,
-                selected_week=selected_week, # 주차 정보 전달
-                directory="{selected_week}/",
+                selected_week=selected_week,    # 주차 정보 전달
+                directory=f"{selected_week}/",
                 exclude_first_commit=True
             )
             
