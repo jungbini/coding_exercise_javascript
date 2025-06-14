@@ -107,6 +107,7 @@ def analyze_commits(github_url, token, username, selected_week, directory="lib/"
         "Accept": "application/vnd.github.v3+json"
     }
     # params = {"per_page": 100, "author": username}
+    params = {"per_page": 100}
     raw_data = []
     page = 1
 
