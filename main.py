@@ -58,7 +58,7 @@ def analyze_repositories_for_week(account_file, selected_week, branch="main"):
             print(f"❌ 오류 발생 (사용자: {line.strip().split(',')[0]}): {e}")
 
     if all_results:
-        print(f"\n📦 전체 요약 파일: {output_csv_filename} 저장 완료.")
+        combined = pd.concat(all_results, ignore_index=True)
         return combined
     else:
         print("\n❗ 모든 사용자에 대한 분석에 실패했거나 유효한 커밋이 없습니다.")
