@@ -1,50 +1,58 @@
 import pandas as pd
-
-# 필요한 함수들을 git_analyzer에서 가져옵니다.
+import sys
 from git_analyzer import analyze_commits, get_week_options, load_week_range
 from html_parser import save_dataframe_as_html
-import sys          # 오류 발생 시 종료를 위해 추가
 
 
-def analyze_repositories_for_week(account_file, selected_week, branch="main"):
+def load_token(file_path="token.txt"):
     """
-    선택된 주차에 대해 여러 사용자의 저장소를 분석합니다.
-    users_account.txt는 '이메일,토큰' 형식을 따라야 합니다.
+    파일에서 GitHub 토큰을 읽어옵니다.
+    """
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        print(f"❌ 오류: '{file_path}' 파일을 찾을 수 없습니다. 토큰 파일을 생성해주세요.")
+        sys.exit(1)
+        
+
+def analyze_repositories_for_week(account_file, token, selected_week, branch="main"):
+    """
+    학생 이메일 목록 파일을 읽어와서, 전달받은 토큰으로 저장소를 분석합니다.
     """
     try:
         with open(account_file, "r", encoding="utf-8") as f:
             lines = f.readlines()
     except FileNotFoundError:
-        print(f"❌ 오류: '{account_file}' 파일을 찾을 수 없습니다. 파일이 정확한 위치에 있는지 확인하세요.")
+        print(f"❌ 오류: '{account_file}' 파일을 찾을 수 없습니다. 학생 이메일 목록 파일이 있는지 확인하세요.")
         sys.exit(1)
 
     all_results = []
 
+    # account_file에서 이메일 목록을 한 줄씩 읽어옵니다.
     for line in lines:
-        if not line.strip():
+        email = line.strip()
+        if not email:
             continue
         try:
-            # 1. 변경된 형식에 맞게 '이메일'과 '토큰'만 읽어옵니다.
-            email, token = line.strip().split(",")
-
-            # 2. 이메일에서 사용자 ID와 표시할 이름을 추출합니다. (예: 'jungbini@...' -> 'jungbini')
+            # 이메일에서 사용자 ID와 표시할 이름을 추출합니다.
             user_id = email.split('@')[0]
-            username = user_id  # 보고서에 표시될 이름으로 사용자 ID를 사용합니다.
+            username = user_id
 
-            # 3. 추출된 user_id로 GitHub 저장소 이름을 생성합니다.
+            # 추출된 user_id로 GitHub 저장소 이름을 생성합니다.
             repo_name = f"homework-{selected_week}-{user_id}"
-            github_url = f"https://github.com/computer-sunmoon/{repo_name}" # .git은 제거하는 것이 좋습니다.
+            github_url = f"https://github.com/computer-sunmoon/{repo_name}"
 
             print(f"🔍 분석 중: {username} ({github_url})")
             
-            # 4. analyze_commits 호출 시, username과 email을 명확히 전달합니다.
+            # analyze_commits 호출 시, 미리 읽어둔 토큰을 사용합니다.
             df = analyze_commits(
                 github_url=github_url,
-                token=token,
-                username=username,              # 보고서 표시용 이름 (예: 'jungbini')
-                author_email=email,             # 커밋 필터링용 이메일 주소
+                token=token,                    # 미리 읽어온 교사 토큰
+                username=username,              # 보고서 표시용 이름
+                author_email=email,             # 커밋 필터링용 이메일
                 selected_week=selected_week,
-                directory=f"lib/{selected_week}/",
+                directory=f"{selected_week}/",
                 exclude_first_commit=True
             )
             
@@ -52,30 +60,34 @@ def analyze_repositories_for_week(account_file, selected_week, branch="main"):
                 all_results.append(df)
             else:
                 print(f"⚠️  {username} 에 대한 커밋 데이터가 없습니다.")
-        except ValueError:
-            print(f"❌ 오류: '{line.strip()}' 라인이 '이메일,토큰' 형식이 아닙니다. 확인해주세요.")
         except Exception as e:
-            print(f"❌ 오류 발생 (사용자: {line.strip().split(',')[0]}): {e}")
+            print(f"❌ 오류 발생 (사용자: {email}): {e}")
 
     if all_results:
         combined = pd.concat(all_results, ignore_index=True)
+        output_csv_filename = f"{selected_week}_summary.csv"
+        combined.to_csv(output_csv_filename, index=False)
+        print(f"\n📦 전체 요약 파일: {output_csv_filename} 저장 완료.")
         return combined
     else:
         print("\n❗ 모든 사용자에 대한 분석에 실패했거나 유효한 커밋이 없습니다.")
         return pd.DataFrame()
-    
 
 
-# 스크립트 실행 부분
+# --- 스크립트 실행 부분 ---
 if __name__ == "__main__":
+    TOKEN_FILE = "token.txt"
     ACCOUNT_FILE = "users_account.txt"
     WEEK_INFO_FILE = "week_information.txt"
 
     try:
-        # 1. week_information.txt에서 선택 가능한 주차 목록 가져오기
+        # 1. 스크립트 시작 시 토큰을 먼저 로드합니다.
+        teacher_token = load_token(TOKEN_FILE)
+        
+        # 2. week_information.txt에서 선택 가능한 주차 목록 가져오기
         week_options = get_week_options(WEEK_INFO_FILE)
         
-        # 2. 사용자에게 주차 선택 요청
+        # 3. 사용자에게 주차 선택 요청
         print("──────────────────────────────────")
         print("분석할 주차를 선택하세요:")
         for i, option in enumerate(week_options):
@@ -95,12 +107,11 @@ if __name__ == "__main__":
         selected_week_label = week_options[selected_index]
         print(f"\n🚀 '{selected_week_label}' 주차 분석을 시작합니다...\n")
 
-        # 3. 선택된 주차에 대한 분석 실행
-        result_df = analyze_repositories_for_week(ACCOUNT_FILE, selected_week_label)
+        # 4. 선택된 주차에 대한 분석 실행 (로드한 토큰을 전달)
+        result_df = analyze_repositories_for_week(ACCOUNT_FILE, teacher_token, selected_week_label)
 
-        # 4. 분석 결과가 있으면 HTML 파일로 저장
+        # 5. 분석 결과가 있으면 HTML 파일로 저장
         if not result_df.empty:
-            # HTML 파서에 전달할 주차 정보(라벨, 시작일, 종료일) 로드
             week_info = load_week_range(WEEK_INFO_FILE, selected_week_label)
             output_html_filename = f"{selected_week_label}_summary.html"
             report_title = f"{selected_week_label} 주차 커밋 통계"
