@@ -65,9 +65,6 @@ def analyze_repositories_for_week(account_file, token, selected_week, branch="ma
 
     if all_results:
         combined = pd.concat(all_results, ignore_index=True)
-        output_csv_filename = f"{selected_week}_summary.csv"
-        combined.to_csv(output_csv_filename, index=False)
-        print(f"\n📦 전체 요약 파일: {output_csv_filename} 저장 완료.")
         return combined
     else:
         print("\n❗ 모든 사용자에 대한 분석에 실패했거나 유효한 커밋이 없습니다.")
