@@ -43,13 +43,15 @@ def fetch_loc(repo_owner, repo_name, branch, filename, headers):
         if resp.status_code == 200:
             return resp.text.count("\n") + 1
         else:
-            return None
+            return None        
     except:
         return None
+    
 
 def calculate_similarity(local_code: str, remote_code: str) -> float:
     matcher = difflib.SequenceMatcher(None, local_code, remote_code)
     return round(matcher.ratio() * 100, 2)
+
 
 def fetch_similarity(repo_owner, repo_name, branch, filename, headers, local_base_dir="lib"):
     local_path = os.path.join(local_base_dir, filename[len("lib/"):])
@@ -68,11 +70,13 @@ def fetch_similarity(repo_owner, repo_name, branch, filename, headers, local_bas
     except:
         return None
 
+
 def calculate_duration(start_time, end_time):
     duration = end_time - start_time
     hours, remainder = divmod(duration.total_seconds(), 3600)
     minutes, _ = divmod(remainder, 60)
     return f"{int(hours)}시간 {int(minutes)}분"
+
 
 def load_week_range(file_path="week_information.txt", selected_label: str = None):
     """선택된 라벨에 해당하는 주차의 정보(라벨, 시작일, 종료일)를 반환합니다."""
@@ -85,6 +89,7 @@ def load_week_range(file_path="week_information.txt", selected_label: str = None
                 end = datetime.strptime(end_str.strip(), "%Y-%m-%d").replace(hour=23, minute=59, second=59)
                 return label, start, end
     raise ValueError(f"'{selected_label}'에 해당하는 주차 정보를 찾을 수 없습니다.")
+
 
 def analyze_commits(github_url, token, username, selected_week, directory="lib/", branch="main", exclude_first_commit=False):
     """GitHub 저장소의 커밋을 분석합니다. selected_week 인자를 필수로 받습니다."""
