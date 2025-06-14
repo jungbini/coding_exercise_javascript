@@ -1,8 +1,10 @@
 from git_analyzer import load_week_range
 import pandas as pd
+import os
 
 def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일별 커밋 통계"):
     week_label, start_date, end_date = load_week_range()
+    
     df["result_color"] = df["평가"].map({
         "fail": "background-color: #ffdddd;",
         "warning": "background-color: #fffacc;",
@@ -48,7 +50,7 @@ def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일�
         <th>파일명 (총 커밋 수)</th>
         <th>최근 커밋일시</th>
         <th>상태</th>
-        <th>평균 수정 라인 수</th>
+        <th>평균 수정 라인 수 (+/-)</th>
         <th>코드 유사도</th>
         <th>코딩 시간</th>
         <th>평가</th>
@@ -68,7 +70,7 @@ def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일�
             html += f"<td class='filename-col'>{row['파일명 (총 커밋 수)']}</td>"
             html += f"<td>{row['최근 커밋일시']}</td>"
             html += f"<td>{row['상태']}</td>"
-            html += f"<td>{row['평균 수정 라인 수']}</td>"
+            html += f"<td>{row['평균 수정 라인 수 (+/-)']}</td>"
             html += f"<td>{row['코드 유사도']}</td>"
             html += f"<td>{row['코딩 시간']}</td>"
             html += f"<td style='{row['result_color']}'>{row['평가']}</td>"
@@ -80,4 +82,3 @@ def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일�
         f.write(html)
 
     print(f"✅ HTML 파일 저장 완료: {output_path}")
-
