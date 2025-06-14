@@ -58,9 +58,6 @@ def analyze_repositories_for_week(account_file, selected_week, branch="main"):
             print(f"❌ 오류 발생 (사용자: {line.strip().split(',')[0]}): {e}")
 
     if all_results:
-        combined = pd.concat(all_results, ignore_index=True)
-        output_csv_filename = f"{selected_week}_summary.csv"
-        combined.to_csv(output_csv_filename, index=False)
         print(f"\n📦 전체 요약 파일: {output_csv_filename} 저장 완료.")
         return combined
     else:
