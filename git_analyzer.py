@@ -8,6 +8,10 @@ from datetime import datetime, timedelta
 
 
 def extract_repo_info(url):
+    # .git으로 끝나는 경우를 대비해 정규식 수정 또는 문자열 처리 추가
+    if url.endswith(".git"):
+        url = url[:-4] # ".git" 제거
+        
     match = re.match(r"https://github\.com/([^/]+)/([^/]+)", url)
     if match:
         return match.group(1), match.group(2)
