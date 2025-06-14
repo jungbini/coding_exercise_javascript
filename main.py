@@ -1,13 +1,15 @@
 import pandas as pd
+
 # 필요한 함수들을 git_analyzer에서 가져옵니다.
 from git_analyzer import analyze_commits, get_week_options, load_week_range
 from html_parser import save_dataframe_as_html
-import sys # 오류 발생 시 종료를 위해 추가
+import sys          # 오류 발생 시 종료를 위해 추가
+
 
 def analyze_repositories_for_week(account_file, selected_week, branch="main"):
     """
     선택된 주차에 대해 여러 사용자의 저장소를 분석합니다.
-    users_account.txt는 '사용자ID,토큰,사용자이름' 형식을 따라야 합니다.
+    users_account.txt는 '이메일,토큰' 형식을 따라야 합니다.
     """
     try:
         with open(account_file, "r", encoding="utf-8") as f:
@@ -16,28 +18,32 @@ def analyze_repositories_for_week(account_file, selected_week, branch="main"):
         print(f"❌ 오류: '{account_file}' 파일을 찾을 수 없습니다. 파일이 정확한 위치에 있는지 확인하세요.")
         sys.exit(1)
 
-
     all_results = []
 
     for line in lines:
         if not line.strip():
             continue
         try:
-            # 변경된 users_account.txt 형식에 맞게 파싱
-            user_id, token, username = line.strip().split(",")
+            # 1. 변경된 형식에 맞게 '이메일'과 '토큰'만 읽어옵니다.
+            email, token = line.strip().split(",")
 
-            # XXX와 YYY를 채워 동적으로 GitHub URL 생성
+            # 2. 이메일에서 사용자 ID와 표시할 이름을 추출합니다. (예: 'jungbini@...' -> 'jungbini')
+            user_id = email.split('@')[0]
+            username = user_id  # 보고서에 표시될 이름으로 사용자 ID를 사용합니다.
+
+            # 3. 추출된 user_id로 GitHub 저장소 이름을 생성합니다.
             repo_name = f"homework-{selected_week}-{user_id}"
-            github_url = f"https://github.com/computer-sunmoon/{repo_name}.git"
+            github_url = f"https://github.com/computer-sunmoon/{repo_name}" # .git은 제거하는 것이 좋습니다.
 
             print(f"🔍 분석 중: {username} ({github_url})")
             
-            # analyze_commits 호출 시 selected_week 전달
+            # 4. analyze_commits 호출 시, username과 email을 명확히 전달합니다.
             df = analyze_commits(
                 github_url=github_url,
                 token=token,
-                username=username,
-                selected_week=selected_week,    # 주차 정보 전달
+                username=username,              # 보고서 표시용 이름 (예: 'jungbini')
+                author_email=email,             # 커밋 필터링용 이메일 주소
+                selected_week=selected_week,
                 directory=f"{selected_week}/",
                 exclude_first_commit=True
             )
@@ -47,13 +53,12 @@ def analyze_repositories_for_week(account_file, selected_week, branch="main"):
             else:
                 print(f"⚠️  {username} 에 대한 커밋 데이터가 없습니다.")
         except ValueError:
-            print(f"❌ 오류: '{line.strip()}' 라인이 '사용자ID,토큰,사용자이름' 형식이 아닙니다. 확인해주세요.")
+            print(f"❌ 오류: '{line.strip()}' 라인이 '이메일,토큰' 형식이 아닙니다. 확인해주세요.")
         except Exception as e:
             print(f"❌ 오류 발생 (사용자: {line.strip().split(',')[0]}): {e}")
 
     if all_results:
         combined = pd.concat(all_results, ignore_index=True)
-        # 결과 파일명을 동적으로 생성
         output_csv_filename = f"{selected_week}_summary.csv"
         combined.to_csv(output_csv_filename, index=False)
         print(f"\n📦 전체 요약 파일: {output_csv_filename} 저장 완료.")
@@ -61,6 +66,7 @@ def analyze_repositories_for_week(account_file, selected_week, branch="main"):
     else:
         print("\n❗ 모든 사용자에 대한 분석에 실패했거나 유효한 커밋이 없습니다.")
         return pd.DataFrame()
+    
 
 
 # 스크립트 실행 부분
