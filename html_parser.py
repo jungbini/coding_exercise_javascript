@@ -1,21 +1,78 @@
+from git_analyzer import load_week_range
 import pandas as pd
+import os
+import re
 
 
-def save_dataframe_as_html(df, week_info, output_path="commit_summary.html", title="파일별 커밋 통계"):
+def _split_filename_and_count(cell: str):
     """
-    DataFrame을 HTML 파일로 저장합니다. week_info 튜플(라벨, 시작일, 종료일)을 직접 받습니다.
+    '<a href="...">path/to/file.py (3)</a>' 형태나 'path/to/file.py (3)' 형태에서
+    파일명(anchor 유지)과 정수 커밋 수를 분리합니다.
     """
-    week_label, start_date, end_date = week_info
+    if pd.isna(cell):
+        return cell, None
 
-    # 평가 결과에 따른 배경색 설정
+    s = str(cell)
+    href = None
+    # href 추출 (있을 경우)
+    m_href = re.search(r'href="([^"]+)"', s)
+    if m_href:
+        href = m_href.group(1)
+
+    # 앵커 안에 '파일명 (숫자)' 형태
+    m = re.search(r'>(.*?)\s*\((\d+)\)\s*</a>\s*$', s)
+    if m:
+        filename_text = m.group(1).strip()
+        count = int(m.group(2))
+        anchor = f'<a href="{href}" target="_blank">{filename_text}</a>' if href else filename_text
+        return anchor, count
+
+    # 일반 텍스트 '파일명 (숫자)' 형태
+    m2 = re.search(r'^(.*?)\s*\((\d+)\)\s*$', s)
+    if m2:
+        filename_text = m2.group(1).strip()
+        count = int(m2.group(2))
+        anchor = f'<a href="{href}" target="_blank">{filename_text}</a>' if href else filename_text
+        return anchor, count
+
+    # 숫자를 못 찾으면 앵커 안의 텍스트만 파일명으로
+    m3 = re.search(r'>(.*?)</a>', s)
+    if m3:
+        filename_text = m3.group(1).strip()
+        anchor = f'<a href="{href}" target="_blank">{filename_text}</a>' if href else filename_text
+        return anchor, None
+
+    return s, None
+
+
+def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일별 커밋 통계"):
+    week_label, start_date, end_date = load_week_range()
+
+    # ✅ 입력 df에 '파일명 (총 커밋 수)'가 있다면 '파일명', '총 커밋 수'로 분리
+    if "파일명 (총 커밋 수)" in df.columns:
+        filenames = []
+        counts = []
+        for val in df["파일명 (총 커밋 수)"]:
+            name_anchor, cnt = _split_filename_and_count(val)
+            filenames.append(name_anchor)
+            counts.append(cnt if cnt is not None else 0)
+        df["파일명"] = filenames
+        df["총 커밋 수"] = pd.Series(counts, index=df.index).astype(int)
+        df.drop(columns=["파일명 (총 커밋 수)"], inplace=True)
+    else:
+        # '파일명'은 있는데 '총 커밋 수'가 없다면 0으로 초기화(안전망)
+        if "파일명" in df.columns and "총 커밋 수" not in df.columns:
+            df["총 커밋 수"] = 0
+
     df["result_color"] = df["평가"].map({
         "fail": "background-color: #ffdddd;",
         "warning": "background-color: #fffacc;",
         "success": "background-color: #ddffdd;"
     })
 
-    # git_analyzer에서 추가된 week_label을 그대로 사용하므로, 여기서는 별도 계산이 필요 없습니다.
-    # 단지 그룹화를 위해 컬럼을 유지합니다.
+    df["최근 커밋일시(dt)"] = pd.to_datetime(df["최근 커밋일시"])
+    df["week_label"] = df["최근 커밋일시(dt)"].apply(lambda d: week_label if start_date <= d <= end_date else "")
+    df.drop(columns=["최근 커밋일시(dt)"], inplace=True)
 
     html = f"""
     <!DOCTYPE html>
@@ -24,12 +81,22 @@ def save_dataframe_as_html(df, week_info, output_path="commit_summary.html", tit
     <meta charset="UTF-8">
     <title>{title}</title>
     <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }}
-        table {{ border-collapse: collapse; width: 100%; font-family: Arial, sans-serif; }}
-        th, td {{ border: 1px solid #ccc; padding: 8px; text-align: center; }}
-        th {{ background-color: #f2f2f2; }}
-        td.filename-col {{ text-align: left; }}
-        h2 {{ color: #333; }}
+        table {{
+            border-collapse: collapse;
+            width: 100%;
+            font-family: Arial, sans-serif;
+        }}
+        th, td {{
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: center;
+        }}
+        th {{
+            background-color: #f2f2f2;
+        }}
+        td.filename-col {{
+            text-align: left;
+        }}
     </style>
     </head>
     <body>
@@ -38,39 +105,34 @@ def save_dataframe_as_html(df, week_info, output_path="commit_summary.html", tit
     <thead>
     <tr>
         <th>주차</th>
-        <th>User</th>
-        <th>파일명 (총 커밋 수)</th>
+        <th>user</th>
+        <th>파일명</th>
         <th>최근 커밋일시</th>
         <th>상태</th>
+        <th>총 커밋 수</th>
         <th>평균 수정 라인 수 (+/-)</th>
-        <th>코드 유사도 (%)</th>
+        <th>코드 유사도</th>
         <th>코딩 시간</th>
         <th>평가</th>
     </tr>
     </thead>
     <tbody>
     """
-    # 주차와 사용자로 그룹화하여 테이블 생성
+
     grouped = df.groupby(["week_label", "user"])
     for (week, user), group in grouped:
         rowspan = len(group)
-        # 그룹 내에서 최근 커밋일시 순으로 정렬
-        sorted_group = group.sort_values(by="최근 커밋일시", ascending=False)
-        for idx, row in sorted_group.iterrows():
+        for idx, row in group.iterrows():
             html += "<tr>"
-            # 그룹의 첫 번째 행일 때만 주차와 사용자 셀을 병합하여 표시
-            if idx == sorted_group.index[0]:
+            if idx == group.index[0]:
                 html += f"<td rowspan='{rowspan}'>{week}</td>"
                 html += f"<td rowspan='{rowspan}'>{user}</td>"
-            
-            # 나머지 데이터 셀 추가
-            html += f"<td class='filename-col'>{row['파일명 (총 커밋 수)']}</td>"
+            html += f"<td class='filename-col'>{row['파일명']}</td>"
             html += f"<td>{row['최근 커밋일시']}</td>"
             html += f"<td>{row['상태']}</td>"
+            html += f"<td>{row['총 커밋 수']}</td>"
             html += f"<td>{row['평균 수정 라인 수 (+/-)']}</td>"
-            # 코드 유사도 값이 있는 경우에만 표시
-            similarity = f"{row['코드 유사도']:.2f}" if pd.notnull(row['코드 유사도']) else "N/A"
-            html += f"<td>{similarity}</td>"
+            html += f"<td>{row['코드 유사도']}</td>"
             html += f"<td>{row['코딩 시간']}</td>"
             html += f"<td style='{row['result_color']}'>{row['평가']}</td>"
             html += "</tr>"
@@ -80,4 +142,4 @@ def save_dataframe_as_html(df, week_info, output_path="commit_summary.html", tit
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
 
-    print(f"✅ HTML 리포트 저장 완료: {output_path}")
+    print(f"✅ HTML 파일 저장 완료: {output_path}")
