@@ -100,17 +100,20 @@ def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일�
     else:
         z_scores_changes = np.zeros(len(avg_changes))
     df["z_score_changes"] = np.round(z_scores_changes, 2)
-    df['avg_changes_is_outlier'] = z_scores_changes > 1.0
+    df['avg_changes_is_outlier'] = z_scores_changes > 2.0
     df["z_score_changes_style"] = ""
     df.loc[df[
         'avg_changes_is_outlier'], "z_score_changes_style"] = "color: red; text-decoration: underline; font-weight: bold;"
 
-    # 코드 유사도에 대한 이상치 플래그 생성
-    df['code_similarity_is_outlier'] = df['코드 유사도'] < 85.0
-    df["code_similarity_html"] = df["코드 유사도"].astype(str) + "%"
-    df.loc[df["코드 유사도"] < 85.0, "code_similarity_html"] = df["코드 유사도"].apply(
-        lambda x: f"<span style='color:red; font-weight:bold; text-decoration: underline;'>{x}%</span>"
-    )
+    # 코드 유사도에 대한 이상치 플래그 생성 및 HTML 처리
+    df['code_similarity_is_outlier'] = df['코드 유사도'].isna() | (df['코드 유사도'] < 85.0)
+
+    # NaN 값과 85% 미만 값 모두에 동일한 스타일 적용
+    df['code_similarity_html'] = df["코드 유사도"].astype(str) + "%"
+    df.loc[df['코드 유사도'].isna(), 'code_similarity_html'] = "NaN%"
+    df['code_similarity_style'] = ""
+    df.loc[df[
+        'code_similarity_is_outlier'], 'code_similarity_style'] = "color:red; font-weight:bold; text-decoration: underline;"
 
     # '코딩 시간'에 대한 Z-score 계산 및 이상치 플래그 생성
     coding_minutes = df["코딩 시간"].apply(_parse_minutes).to_numpy()
@@ -146,8 +149,10 @@ def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일�
     df["week_label"] = df["최근 커밋일시(dt)"].apply(lambda d: week_label if start_date <= d <= end_date else "")
     df.drop(columns=["최근 커밋일시(dt)"], inplace=True)
 
-    df = df.sort_values(by=["user", "파일명"]).reset_index(drop=True)
+    # '이름'과 'user'를 기준으로 정렬하여 그룹화 준비
+    df = df.sort_values(by=["이름", "user"]).reset_index(drop=True)
 
+    # 첫 번째 테이블 (파일별 상세 통계) HTML 생성
     html = f"""
     <!DOCTYPE html>
     <html lang="ko">
@@ -159,6 +164,7 @@ def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일�
             border-collapse: collapse;
             width: 100%;
             font-family: Arial, sans-serif;
+            margin-bottom: 30px; /* 테이블 간 간격 추가 */
         }}
         th, td {{
             border: 1px solid #ccc;
@@ -174,7 +180,7 @@ def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일�
     </style>
     </head>
     <body>
-    <h2>{title}</h2>
+    <h2>{title} (파일별)</h2>
     <table>
     <thead>
     <tr>
@@ -195,23 +201,70 @@ def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일�
     <tbody>
     """
 
+    # '이름'과 'user'를 기준으로 그룹화하여 HTML 행 생성
     row_number = 1
-    for idx, row in df.iterrows():
+    for (name, user), group in df.groupby(['이름', 'user']):
+        rowspan = len(group)
+        for idx, row in group.iterrows():
+            html += "<tr>"
+            # 첫 번째 행에만 순번, 주차, 이름, user 셀 병합
+            if idx == group.index[0]:
+                html += f"<td rowspan='{rowspan}'>{row_number}</td>"
+                html += f"<td rowspan='{rowspan}'>{row['week_label']}</td>"
+                html += f"<td rowspan='{rowspan}'>{row['이름']}</td>"
+                html += f"<td rowspan='{rowspan}'>{row['user']}</td>"
+
+            html += f"<td class='filename-col'>{row['파일명']}</td>"
+            html += f"<td>{row['최근 커밋일시']}</td>"
+            html += f"<td>{row['상태']}</td>"
+            html += f"<td style='{row['z_score_commit_style']}'>{row['총 커밋 수']} ({row['z_score_commit']})</td>"
+            html += f"<td style='{row['z_score_changes_style']}'>{row['평균 수정 라인 수 (+/-)']} ({row['z_score_changes']})</td>"
+            html += f"<td style='{row['code_similarity_style']}'>{row['code_similarity_html']}</td>"
+            html += f"<td style='{row['z_score_minutes_style']}'>{row['코딩 시간']} ({row['z_score_minutes']})</td>"
+            html += f"<td style='{row['result_color']}'>{row['평가']}</td>"
+            html += "</tr>"
+
+        row_number += 1
+
+    html += "</tbody></table>"
+
+    # --- 두 번째 테이블 (사용자별 종합 통계) 생성 ---
+
+    # 사용자별로 그룹화하여 파일 수와 평가별 개수 집계
+    user_summary = df.groupby(['이름', 'user']).agg(
+        total_files=('파일명', 'size'),
+        success_count=('평가', lambda x: (x == 'success').sum()),
+        warning_count=('평가', lambda x: (x == 'warning').sum()),
+        fail_count=('평가', lambda x: (x == 'fail').sum())
+    ).reset_index()
+
+    html += f"""
+    <h2>{title} (사용자별 종합)</h2>
+    <table>
+    <thead>
+    <tr>
+        <th>순번</th>
+        <th>이름</th>
+        <th>user</th>
+        <th>조회한 파일의 총 갯수</th>
+        <th>success 수</th>
+        <th>warning 수</th>
+        <th>fail 수</th>
+    </tr>
+    </thead>
+    <tbody>
+    """
+
+    for i, row in user_summary.iterrows():
         html += "<tr>"
-        html += f"<td>{row_number}</td>"
-        html += f"<td>{row['week_label']}</td>"
+        html += f"<td>{i + 1}</td>"
         html += f"<td>{row['이름']}</td>"
         html += f"<td>{row['user']}</td>"
-        html += f"<td class='filename-col'>{row['파일명']}</td>"
-        html += f"<td>{row['최근 커밋일시']}</td>"
-        html += f"<td>{row['상태']}</td>"
-        html += f"<td style='{row['z_score_commit_style']}'>{row['총 커밋 수']} ({row['z_score_commit']})</td>"
-        html += f"<td style='{row['z_score_changes_style']}'>{row['평균 수정 라인 수 (+/-)']} ({row['z_score_changes']})</td>"
-        html += f"<td>{row['code_similarity_html']}</td>"
-        html += f"<td style='{row['z_score_minutes_style']}'>{row['코딩 시간']} ({row['z_score_minutes']})</td>"
-        html += f"<td style='{row['result_color']}'>{row['평가']}</td>"
+        html += f"<td>{row['total_files']}</td>"
+        html += f"<td>{row['success_count']}</td>"
+        html += f"<td>{row['warning_count']}</td>"
+        html += f"<td>{row['fail_count']}</td>"
         html += "</tr>"
-        row_number += 1
 
     html += "</tbody></table></body></html>"
 
