@@ -2,8 +2,9 @@ import pandas as pd
 from git_analyzer import analyze_commits, RepoNotFoundError
 from html_parser import save_dataframe_as_html
 
+
 def analyze_multiple_users(account_file, branch="main"):
-    with open(account_file, "r") as f:
+    with open(account_file, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     all_results = []
@@ -12,13 +13,20 @@ def analyze_multiple_users(account_file, branch="main"):
         if not line.strip():
             continue
         try:
-            github_url, token, username = line.strip().split(",")
-            print(f"🔍 분석 중: {username} ({github_url})")
-            df = analyze_commits(github_url, token, username, directory="lib/", exclude_first_commit=True)
+            parts = line.strip().split(",")
+            github_url, token, username = parts[0], parts[1], parts[2]
+            actual_name = parts[3] if len(parts) > 3 else username  # 실제 이름을 가져옴
+
+            print(f"🔍 분석 중: {actual_name} ({github_url})")
+
+            # 실제 이름을 analyze_commits 함수로 전달
+            df = analyze_commits(github_url, token, username, directory="lib/", exclude_first_commit=True,
+                                 user_actual_name=actual_name)
+
             if not df.empty:
                 all_results.append(df)
             else:
-                print(f"⚠️  {username} 에 대한 커밋 데이터 없음.")
+                print(f"⚠️  {actual_name} 에 대한 커밋 데이터 없음.")
         except RepoNotFoundError as e:
             print(f"❌ 오류 발생: {e}")
         except Exception as e:

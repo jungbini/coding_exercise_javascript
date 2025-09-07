@@ -1,7 +1,8 @@
-from git_analyzer import load_week_range
 import pandas as pd
-import os
+import numpy as np
 import re
+import os
+from git_analyzer import load_week_range
 
 
 def _split_filename_and_count(cell: str):
@@ -45,10 +46,23 @@ def _split_filename_and_count(cell: str):
     return s, None
 
 
+def _parse_minutes(duration_str: str):
+    """
+    '50분' 형태의 문자열을 정수(분)로 변환합니다.
+    """
+    try:
+        match = re.search(r'(\d+)', duration_str)
+        if match:
+            return int(match.group(1))
+        return 0
+    except:
+        return 0
+
+
 def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일별 커밋 통계"):
     week_label, start_date, end_date = load_week_range()
 
-    # ✅ 입력 df에 '파일명 (총 커밋 수)'가 있다면 '파일명', '총 커밋 수'로 분리
+    # 입력 df에 '파일명 (총 커밋 수)'가 있다면 '파일명', '총 커밋 수'로 분리
     if "파일명 (총 커밋 수)" in df.columns:
         filenames = []
         counts = []
@@ -60,9 +74,67 @@ def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일�
         df["총 커밋 수"] = pd.Series(counts, index=df.index).astype(int)
         df.drop(columns=["파일명 (총 커밋 수)"], inplace=True)
     else:
-        # '파일명'은 있는데 '총 커밋 수'가 없다면 0으로 초기화(안전망)
         if "파일명" in df.columns and "총 커밋 수" not in df.columns:
             df["총 커밋 수"] = 0
+
+    # '총 커밋 수'에 대한 Z-score 계산 및 이상치 플래그 생성
+    commit_counts = df["총 커밋 수"].to_numpy()
+    mean_commit = np.mean(commit_counts)
+    std_commit = np.std(commit_counts)
+    if std_commit != 0:
+        z_scores_commit = (commit_counts - mean_commit) / std_commit
+    else:
+        z_scores_commit = np.zeros(len(commit_counts))
+    df["z_score_commit"] = np.round(z_scores_commit, 2)
+    df['commit_count_is_outlier'] = z_scores_commit < -1.0
+    df["z_score_commit_style"] = ""
+    df.loc[df[
+        'commit_count_is_outlier'], "z_score_commit_style"] = "color: red; text-decoration: underline; font-weight: bold;"
+
+    # '평균 수정 라인 수'에 대한 Z-score 계산 및 이상치 플래그 생성
+    avg_changes = df["평균 수정 라인 수 (+/-)"].apply(lambda x: float(x.split(' ')[0])).to_numpy()
+    mean_changes = np.mean(avg_changes)
+    std_changes = np.std(avg_changes)
+    if std_changes != 0:
+        z_scores_changes = (avg_changes - mean_changes) / std_changes
+    else:
+        z_scores_changes = np.zeros(len(avg_changes))
+    df["z_score_changes"] = np.round(z_scores_changes, 2)
+    df['avg_changes_is_outlier'] = z_scores_changes > 1.0
+    df["z_score_changes_style"] = ""
+    df.loc[df[
+        'avg_changes_is_outlier'], "z_score_changes_style"] = "color: red; text-decoration: underline; font-weight: bold;"
+
+    # 코드 유사도에 대한 이상치 플래그 생성
+    df['code_similarity_is_outlier'] = df['코드 유사도'] < 85.0
+    df["code_similarity_html"] = df["코드 유사도"].astype(str) + "%"
+    df.loc[df["코드 유사도"] < 85.0, "code_similarity_html"] = df["코드 유사도"].apply(
+        lambda x: f"<span style='color:red; font-weight:bold; text-decoration: underline;'>{x}%</span>"
+    )
+
+    # '코딩 시간'에 대한 Z-score 계산 및 이상치 플래그 생성
+    coding_minutes = df["코딩 시간"].apply(_parse_minutes).to_numpy()
+    mean_minutes = np.mean(coding_minutes)
+    std_minutes = np.std(coding_minutes)
+    if std_minutes != 0:
+        z_scores_minutes = (coding_minutes - mean_minutes) / std_minutes
+    else:
+        z_scores_minutes = np.zeros(len(coding_minutes))
+    df["z_score_minutes"] = np.round(z_scores_minutes, 2)
+    df['coding_minutes_is_outlier'] = z_scores_minutes < -1.0
+    df["z_score_minutes_style"] = ""
+    df.loc[df[
+        'coding_minutes_is_outlier'], "z_score_minutes_style"] = "color: red; font-weight: bold; text-decoration: underline;"
+
+    # 새로운 평가 로직: 이상치 개수 기반
+    df['outlier_count'] = df['commit_count_is_outlier'].astype(int) + \
+                          df['avg_changes_is_outlier'].astype(int) + \
+                          df['code_similarity_is_outlier'].astype(int) + \
+                          df['coding_minutes_is_outlier'].astype(int)
+
+    df['평가'] = 'success'
+    df.loc[df['outlier_count'] >= 3, '평가'] = 'fail'
+    df.loc[(df['outlier_count'] >= 1) & (df['outlier_count'] < 3), '평가'] = 'warning'
 
     df["result_color"] = df["평가"].map({
         "fail": "background-color: #ffdddd;",
@@ -73,6 +145,8 @@ def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일�
     df["최근 커밋일시(dt)"] = pd.to_datetime(df["최근 커밋일시"])
     df["week_label"] = df["최근 커밋일시(dt)"].apply(lambda d: week_label if start_date <= d <= end_date else "")
     df.drop(columns=["최근 커밋일시(dt)"], inplace=True)
+
+    df = df.sort_values(by=["user", "파일명"]).reset_index(drop=True)
 
     html = f"""
     <!DOCTYPE html>
@@ -104,38 +178,40 @@ def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일�
     <table>
     <thead>
     <tr>
+        <th>순번</th>
         <th>주차</th>
+        <th>이름</th>
         <th>user</th>
         <th>파일명</th>
         <th>최근 커밋일시</th>
         <th>상태</th>
-        <th>총 커밋 수</th>
-        <th>평균 수정 라인 수 (+/-)</th>
+        <th>총 커밋 수 (Z-score)</th>
+        <th>평균 수정 라인 수 (+/-) (Z-score)</th>
         <th>코드 유사도</th>
-        <th>코딩 시간</th>
+        <th>코딩 시간 (Z-score)</th>
         <th>평가</th>
     </tr>
     </thead>
     <tbody>
     """
 
-    grouped = df.groupby(["week_label", "user"])
-    for (week, user), group in grouped:
-        rowspan = len(group)
-        for idx, row in group.iterrows():
-            html += "<tr>"
-            if idx == group.index[0]:
-                html += f"<td rowspan='{rowspan}'>{week}</td>"
-                html += f"<td rowspan='{rowspan}'>{user}</td>"
-            html += f"<td class='filename-col'>{row['파일명']}</td>"
-            html += f"<td>{row['최근 커밋일시']}</td>"
-            html += f"<td>{row['상태']}</td>"
-            html += f"<td>{row['총 커밋 수']}</td>"
-            html += f"<td>{row['평균 수정 라인 수 (+/-)']}</td>"
-            html += f"<td>{row['코드 유사도']}</td>"
-            html += f"<td>{row['코딩 시간']}</td>"
-            html += f"<td style='{row['result_color']}'>{row['평가']}</td>"
-            html += "</tr>"
+    row_number = 1
+    for idx, row in df.iterrows():
+        html += "<tr>"
+        html += f"<td>{row_number}</td>"
+        html += f"<td>{row['week_label']}</td>"
+        html += f"<td>{row['이름']}</td>"
+        html += f"<td>{row['user']}</td>"
+        html += f"<td class='filename-col'>{row['파일명']}</td>"
+        html += f"<td>{row['최근 커밋일시']}</td>"
+        html += f"<td>{row['상태']}</td>"
+        html += f"<td style='{row['z_score_commit_style']}'>{row['총 커밋 수']} ({row['z_score_commit']})</td>"
+        html += f"<td style='{row['z_score_changes_style']}'>{row['평균 수정 라인 수 (+/-)']} ({row['z_score_changes']})</td>"
+        html += f"<td>{row['code_similarity_html']}</td>"
+        html += f"<td style='{row['z_score_minutes_style']}'>{row['코딩 시간']} ({row['z_score_minutes']})</td>"
+        html += f"<td style='{row['result_color']}'>{row['평가']}</td>"
+        html += "</tr>"
+        row_number += 1
 
     html += "</tbody></table></body></html>"
 
