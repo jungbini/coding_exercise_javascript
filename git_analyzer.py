@@ -2,8 +2,9 @@ import requests
 import pandas as pd
 import time
 import re
-import difflib
 import os
+import subprocess
+import difflib
 from datetime import datetime, timedelta
 
 
@@ -87,9 +88,46 @@ def fetch_loc(repo_owner, repo_name, branch, filename, headers):
     except:
         return None
 
+def format_dart_code(code_string: str) -> str:
+    # Get the directory of the current Python script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # Path to dart.exe, assuming 'dart-sdk' is a subfolder in your project
+    dart_exe_path = os.path.join(script_dir, "dart-sdk", "bin", "dart.exe")
+
+    if not os.path.exists(dart_exe_path):
+        print(f"❌ Could not find dart.exe at: {dart_exe_path}. Please place the 'dart-sdk' folder inside your project directory.")
+        return code_string
+
+    try:
+        result = subprocess.run(
+            [dart_exe_path, 'format'],
+            input=code_string.encode('utf-8'),
+            capture_output=True,
+            check=True
+        )
+        return result.stdout.decode('utf-8')
+    except subprocess.CalledProcessError as e:
+        return code_string
+    except FileNotFoundError:
+        print(f"❌ Failed to run dart.exe. Check if the file permissions are correct.")
+        return code_string
+    except Exception as e:
+        print(e)
+
 
 def calculate_similarity(local_code: str, remote_code: str) -> float:
-    matcher = difflib.SequenceMatcher(None, local_code, remote_code)
+    """
+        포맷팅된 Dart 코드의 유사도를 계산합니다.
+        """
+    # 1. 비교할 두 코드를 먼저 포맷팅합니다.
+    formatted_local_code = format_dart_code(local_code)
+    formatted_remote_code = format_dart_code(remote_code)
+
+    # 2. 포맷팅된 코드를 SequenceMatcher로 비교합니다.
+    matcher = difflib.SequenceMatcher(None, formatted_local_code, formatted_remote_code)
+
+    # 3. 유사도 점수를 반환합니다.
     return round(matcher.ratio() * 100, 2)
 
 
@@ -282,7 +320,9 @@ def _fetch_commits(base_url, headers, params, directory, start_filter, end_filte
             for f in detail.get("files", []):
                 filepath = f["filename"]
                 status = f.get("status", "")
-                if filepath.startswith(directory) and status != "removed":
+
+                # dart 파일만 분석하도록 조건 추가
+                if filepath.startswith(directory) and filepath.endswith(".dart") and status != "removed":
                     raw_data.append({
                         "user": username,
                         "date": date,
