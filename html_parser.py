@@ -230,13 +230,19 @@ def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일�
 
     # --- 두 번째 테이블 (사용자별 종합 통계) 생성 ---
 
-    # 사용자별로 그룹화하여 파일 수와 평가별 개수 집계
+    # 사용자별로 그룹화하여 파일 수, 평가별 개수 및 최근 커밋 일시가 같은 파일 개수 집계
     user_summary = df.groupby(['이름', 'user']).agg(
         total_files=('파일명', 'size'),
         success_count=('평가', lambda x: (x == 'success').sum()),
         warning_count=('평가', lambda x: (x == 'warning').sum()),
-        fail_count=('평가', lambda x: (x == 'fail').sum())
+        fail_count=('평가', lambda x: (x == 'fail').sum()),
+        latest_commit_file_count=('최근 커밋일시', lambda x: (x == x.mode().iloc[0]).sum())
     ).reset_index()
+
+    # 비율 계산 및 스타일 적용
+    user_summary['latest_commit_file_ratio'] = user_summary['latest_commit_file_count'] / user_summary['total_files']
+    user_summary['latest_commit_style'] = np.where(user_summary['latest_commit_file_ratio'] > 0.1,
+                                                   'background-color: #ffdddd;', '')
 
     html += f"""
     <h2>{title} (사용자별 종합)</h2>
@@ -247,6 +253,7 @@ def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일�
         <th>이름</th>
         <th>user</th>
         <th>조회한 파일의 총 갯수</th>
+        <th>최근 커밋일시가 같은 파일 수</th>
         <th>success 수</th>
         <th>warning 수</th>
         <th>fail 수</th>
@@ -261,6 +268,7 @@ def save_dataframe_as_html(df, output_path="commit_summary.html", title="파일�
         html += f"<td>{row['이름']}</td>"
         html += f"<td>{row['user']}</td>"
         html += f"<td>{row['total_files']}</td>"
+        html += f"<td style='{row['latest_commit_style']}'>{row['latest_commit_file_count']}</td>"
         html += f"<td>{row['success_count']}</td>"
         html += f"<td>{row['warning_count']}</td>"
         html += f"<td>{row['fail_count']}</td>"
