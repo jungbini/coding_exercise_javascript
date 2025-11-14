@@ -7,9 +7,6 @@ import subprocess
 import difflib
 from datetime import datetime, timedelta
 
-_JS_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
-_JS_LINE_COMMENT_RE  = re.compile(r"//[^\n]*")
-
 
 class RepoNotFoundError(ValueError):
     pass
@@ -91,24 +88,67 @@ def fetch_loc(repo_owner, repo_name, branch, filename, headers):
     except:
         return None
 
-def _normalize_js(code: str) -> str:
-    code = _JS_BLOCK_COMMENT_RE.sub("", code)
-    code = _JS_LINE_COMMENT_RE.sub("", code)
-    lines = [ln.strip() for ln in code.splitlines()]
-    compact = "\n".join([ln for ln in lines if ln != ""])
-    compact = re.sub(r"\s+", " ", compact)
-    return compact.strip()
+
+def format_javascript_code(code_string: str) -> str:
+    """
+    Prettier를 사용하여 JavaScript 코드를 포맷합니다.
+    (Node.js 설치 및 프로젝트 루트에 'npm install prettier' 필요)
+    """
+    # Get the directory of the current Python script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # Path to prettier, assuming it's installed via npm in the project root
+    # Windows: .bin/prettier.cmd, Others: .bin/prettier
+    prettier_path_win = os.path.join(script_dir, "..", "node_modules", ".bin", "prettier.cmd")
+    prettier_path_unix = os.path.join(script_dir, "..", "node_modules", ".bin", "prettier")
+
+    if os.name == 'nt' and os.path.exists(prettier_path_win):
+        prettier_exe_path = prettier_path_win
+    elif os.path.exists(prettier_path_unix):
+        prettier_exe_path = prettier_path_unix
+    else:
+        print(f"❌ Could not find Prettier executable. Make sure you have run 'npm install prettier' in the project root.")
+        return code_string
+
+    try:
+        result = subprocess.run(
+            [prettier_exe_path, "--stdin", "--parser", "babel"],
+            input=code_string.encode('utf-8'),
+            capture_output=True,
+            check=True
+        )
+        return result.stdout.decode('utf-8')
+    except subprocess.CalledProcessError as e:
+        # Prettier formatting failed (e.g., syntax error in code)
+        return code_string
+    except FileNotFoundError:
+        print(f"❌ Failed to run Prettier. Check file permissions or installation.")
+        return code_string
+    except Exception as e:
+        print(f"❌ An unexpected error occurred during formatting: {e}")
+        return code_string
+
 
 def calculate_similarity(local_code: str, remote_code: str) -> float:
     """
-        포맷팅된 Dart 코드의 유사도를 계산합니다.
+        포맷팅된 JavaScript 코드의 유사도를 계산합니다.
         """
-    norm_local = _normalize_js(local_code)
-    norm_remote = _normalize_js(remote_code)
-    return round(difflib.SequenceMatcher(None, norm_local, norm_remote).ratio() * 100, 2)
+    # 1. 비교할 두 코드를 먼저 포맷팅합니다.
+    # Dart 포매터 대신 JavaScript 포매터를 사용합니다.
+    formatted_local_code = format_javascript_code(local_code)
+    formatted_remote_code = format_javascript_code(remote_code)
+
+    # 2. 포맷팅된 코드를 SequenceMatcher로 비교합니다.
+    matcher = difflib.SequenceMatcher(None, formatted_local_code, formatted_remote_code)
+
+    # 3. 유사도 점수를 반환합니다.
+    return round(matcher.ratio() * 100, 2)
+
 
 def fetch_similarity(repo_owner, repo_name, branch, filename, headers, local_base_dir="lib"):
-    local_path = os.path.join(local_base_dir, filename[len("lib/"):])
+    # JS 파일 경로에 맞게 local_path 생성 (JS 파일은 'lib' 대신 'src'나 'js' 등의 디렉토리에 있을 수 있음)
+    # 기존 코드에서는 'lib/' 디렉토리 하위로 가정하고 있습니다.
+    local_path = os.path.join(local_base_dir, filename[len(local_base_dir) + 1:])
     if not os.path.exists(local_path):
         return None
     try:
@@ -136,7 +176,9 @@ def load_week_range(file_path="week_information.txt"):
         line = f.readline().strip()
         label, start_str, end_str = line.split(",")
         start = datetime.strptime(start_str.strip(), "%Y-%m-%d")
-        end = datetime.strptime(end_str.strip(), "%Y-%m-%d")
+        # end_str은 자정(00:00:00)을 의미하므로, 하루를 더해서 다음날 자정 직전(23:59:59)으로 간주합니다.
+        # 이렇게 하지 않으면 마지막 날에 커밋한 내용이 필터링되지 않을 수 있습니다.
+        end = datetime.strptime(end_str.strip(), "%Y-%m-%d") + timedelta(days=1, microseconds=-1)
         return label, start, end
 
 
@@ -201,7 +243,7 @@ def analyze_commits(github_url, token, username, directory="lib/", branch="main"
     summary["loc"] = summary["loc"].astype(int)
 
     summary["code_similarity"] = summary["filename"].apply(
-        lambda f: fetch_similarity(repo_owner, repo_name, branch, f, headers))
+        lambda f: fetch_similarity(repo_owner, repo_name, branch, f, headers, directory)) # local_base_dir을 directory 변수로 설정
     summary["date"] = pd.to_datetime(summary["date"]).dt.strftime("%Y-%m-%d %H:%M")
     summary["result"] = summary["commit_count"].apply(calculate_result)
 
@@ -219,7 +261,7 @@ def analyze_commits(github_url, token, username, directory="lib/", branch="main"
         lambda row: f'{row["total_changes_mean"]} ({row["additions_mean"]}/{row["deletions_mean"]})', axis=1
     )
 
-    summary.drop(columns=["filename", "url", "commit_count", "total_changes_mean", "additions_mean", "deletions_mean"],
+    summary.drop(columns=["filename", "url", "commit_count", "total_changes_mean", "additions_mean", "deletions_mean", "loc"],
                  inplace=True)
 
     # 실제 이름이 있으면 'user' 컬럼 앞에 '이름' 컬럼 추가
@@ -297,7 +339,7 @@ def _fetch_commits(base_url, headers, params, directory, start_filter, end_filte
                 filepath = f["filename"]
                 status = f.get("status", "")
 
-                # dart 파일만 분석하도록 조건 추가
+                # **JS 파일만 분석하도록 조건 변경 (.dart -> .js)**
                 if filepath.startswith(directory) and filepath.endswith(".js") and status != "removed":
                     raw_data.append({
                         "user": username,
